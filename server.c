@@ -1,58 +1,38 @@
 #include <stdio.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 
-#define FIFO_FILE "./fifo_file"
-void reverse_string(char *);
-int main() {
-   int fd;
-   char readbuf[80];
-   char end[10];
-   int to_end;
-   int read_bytes;
-   
-   /* Create the FIFO if it does not exist */
-   mkfifo(FIFO_FILE, S_IFIFO|0640);
-   strcpy(end, "end");
-   fd = open(FIFO_FILE, O_RDWR);
-   while(1) {
-      read_bytes = read(fd, readbuf, sizeof(readbuf));
-      readbuf[read_bytes] = '\0';
-      printf("FIFOSERVER: Received string: \"%s\" and length is %d\n", readbuf, (int)strlen(readbuf));
-      to_end = strcmp(readbuf, end);
-      
-      if (to_end == 0) {
-         close(fd);
-         break;
-      }
-      reverse_string(readbuf);
-      printf("FIFOSERVER: Sending Reversed String: \"%s\" and length is %d\n", readbuf, (int) strlen(readbuf));
-      write(fd, readbuf, strlen(readbuf));
-      /*
-      sleep - This is to make sure other process reads this, otherwise this
-      process would retrieve the message
-      */
-      sleep(2);
-   }
-   return 0;
+#include "message.h"
+#include "error.h"
+
+error_status_t server() {
+    error_status_t ret_status = STATUS_SUCCESS;
+	int fd = -1;
+    char* sub_str = "watch";
+    message_check_str_t msg = {0};
+     
+	/* Create the FIFO if it does not exist */
+	mkfifo(FIFO_FILE, S_IFIFO|0640);
+	fd = open(FIFO_FILE, O_RDWR);
+    CHECK_STR(fd != -1,"Failed to open FIFO file");
+    sleep(5);
+	while(1) {
+        msg.hdr.type = MSG_CHECK_STR;
+        strncpy(msg.substr, sub_str, strlen(sub_str));
+        CHECK_FUNC(send_message(fd, MSG_CHECK_STR, (message_t*)&msg));
+        printf("sent message type: %d\n", msg.hdr.type);
+        sleep(2);
+        CHECK_FUNC(recv_message(fd, (message_t*)&msg));
+        printf("got message: %d, str: %s, pid: %d\n", msg.hdr.type, msg.substr, msg.pid);
+	}
+
+cleanup:
+    return ret_status;
 }
 
-void reverse_string(char *str) {
-   int last, limit, first;
-   char temp;
-   last = strlen(str) - 1;
-   limit = last/2;
-   first = 0;
-   
-   while (first < last) {
-      temp = str[first];
-      str[first] = str[last];
-      str[last] = temp;
-      first++;
-      last--;
-   }
-   return;
+int main() { 
+    server();
+	return 0;
 }
