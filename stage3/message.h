@@ -4,9 +4,10 @@
 #include <linux/limits.h>
 #include "error.h"
 
-#define FIFO_FILE ("/tmp/fifo_twoway")
+#define FIFO_FILE ("/tmp/fifo")
 #define UNIX_SOCK_PATH ("\0sock_name")
 #define MAX_MSG_DATA (4096)
+
 
 typedef enum {
     MSG_GENERIC,
@@ -14,7 +15,8 @@ typedef enum {
     MSG_CHECK_STR,
     MSG_CHECK_STR_ANS,
     MSG_GET_WHITELIST,
-    MSG_GET_WHITELIST_ANS
+    MSG_GET_WHITELIST_ANS,
+    MSG_END
 } message_type_t;
 
 typedef struct {
@@ -40,6 +42,8 @@ typedef struct {
     int len;
     char list[MAX_MSG_DATA - sizeof(int)];
 } message_get_whitelist_t;
+
+#define IS_END_MSG(m) (m.hdr.type == MSG_END)
 
 error_status_t send_message(int fd, message_t* msg);
 error_status_t recv_message(int fd, message_t* msg);

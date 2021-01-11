@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
@@ -9,30 +11,44 @@
 
 error_status_t server() {
     error_status_t ret_status = STATUS_SUCCESS;
-	int fd = -1;
-    char* sub_str = "watch";
-    message_check_str_t msg = {0};
-     
-	/* Create the FIFO if it does not exist */
-	mkfifo(FIFO_FILE, S_IFIFO|0640);
-	fd = open(FIFO_FILE, O_RDWR);
-    CHECK_STR(fd != -1,"Failed to open FIFO file");
-    sleep(5);
-	while(1) {
-        msg.hdr.type = MSG_CHECK_STR;
-        strncpy(msg.substr, sub_str, strlen(sub_str));
-        CHECK_FUNC(send_message(fd, MSG_CHECK_STR, (message_t*)&msg));
-        printf("sent message type: %d\n", msg.hdr.type);
-        sleep(2);
-        CHECK_FUNC(recv_message(fd, (message_t*)&msg));
-        printf("got message: %d, str: %s, pid: %d\n", msg.hdr.type, msg.substr, msg.pid);
-	}
+    int server_fd = -1;
+    int client_fd = -1;
+    int read_bytes = 0;
+    struct sockaddr_un addr = {0};
+    message_t msg = {0};
+
+    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    CHECK(server_fd != -1);
+    addr.sun_family = AF_UNIX;
+    // TODO: check memcpy return?
+    memcpy(addr.sun_path, UNIX_SOCK_PATH, sizeof(addr.sun_path)-1);
+
+    CHECK(bind(server_fd, (struct sockaddr *)&addr, sizeof(addr) != -1));
+    CHECK(listen(server_fd, 5) != -1);
+
+    while (1) {
+        client_fd = accept(server_fd, NULL, NULL);
+        CHECK(client_fd != -1);
+        read_bytes = recv(client_fd, (void*)&msg, sizeof(msg), 0);
+        CHECK(read_bytes == sizeof(msg));
+        while (read_bytes != 0) {
+            printf("got message type: %d, message %s", msg.hdr.type, msg.buf);
+            read_bytes = recv(client_fd, (void*)&msg, sizeof(msg), 0);
+            CHECK(read_bytes == sizeof(msg));
+        }
+        close(client_fd);
+    }
 
 cleanup:
+    close(client_fd); // Best effort.
+    close(server_fd); // Best effort.
     return ret_status;
 }
 
+
+
 int main() { 
-    server();
-	return 0;
+    int ret = 0;
+    ret = server();
+	return ret;
 }

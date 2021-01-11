@@ -1,15 +1,17 @@
-#include <stdlib.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <linux/limits.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <dirent.h>
-#include <linux/limits.h>
-#include <fcntl.h>
+#include <sys/un.h>
 #include <unistd.h>
-#include <string.h>
 
-#include "message.h"
 #include "error.h"
+#include "message.h"
 
 #define _STR(x) #x
 #define STR(x) _STR(x)
@@ -33,14 +35,15 @@ typedef struct {
 error_status_t test_connection(const char* filename) {
     error_status_t ret_status = STATUS_SUCCESS;
     struct stat buffer = {0};
-    CHECK(filename != NULL); 
+    CHECK(filename != NULL);
     CHECK(stat(filename, &buffer) == 0);
 
 cleanup:
     return ret_status;
 }
 
-static error_status_t join_proc_path(char* path, const char* pid, const char* pid_info) {
+static error_status_t join_proc_path(char* path, const char* pid,
+                                     const char* pid_info) {
     error_status_t ret_status = STATUS_SUCCESS;
     int r_bytes = -1;
 
@@ -48,7 +51,8 @@ static error_status_t join_proc_path(char* path, const char* pid, const char* pi
     CHECK(pid_info != NULL);
 
     r_bytes = snprintf(path, PATH_MAX, PROC_FORMAT, pid, pid_info);
-    // if the bytes printed were more than the size given the output was truncated
+    // if the bytes printed were more than the size given the output was
+    // truncated
     CHECK(r_bytes > 0 && r_bytes < PATH_MAX);
 
 cleanup:
@@ -69,11 +73,12 @@ error_status_t parse_stat(pid_info_t* info, const char* stat_path) {
 
     r_bytes = read(fp, stat_buf, BUF_SIZE);
     CHECK(r_bytes > 0 && r_bytes < BUF_SIZE);
-   
-    CHECK(sscanf(stat_buf, STAT_FORMAT, &info->pid, info->name, &info->ppid, &info->gid) == 4);
+
+    CHECK(sscanf(stat_buf, STAT_FORMAT, &info->pid, info->name, &info->ppid,
+                 &info->gid) == 4);
 
 cleanup:
-    close(fp); // Best effort.
+    close(fp);  // Best effort.
     return ret_status;
 }
 
@@ -87,20 +92,20 @@ error_status_t parse_pid(pid_info_t* info, char* pid) {
     CHECK_FUNC(join_proc_path(stat_path, pid, STAT));
     CHECK_FUNC(parse_stat(info, stat_path));
 
-
 cleanup:
     return ret_status;
 }
 
-error_status_t check_pid_name(pid_info_t* info, const char* substr, bool* contains) {
+error_status_t check_pid_name(pid_info_t* info, const char* substr,
+                              bool* contains) {
     error_status_t ret_status = STATUS_SUCCESS;
     char* sub = NULL;
 
     CHECK(info != NULL);
     CHECK(substr != NULL);
-    
+
     sub = strstr(info->name, substr);
-    if (sub != NULL) 
+    if (sub != NULL)
         *contains = true;
     else
         *contains = false;
@@ -132,7 +137,7 @@ static error_status_t check_process_name(const char* substr, int* ret_pid) {
             CHECK_FUNC(parse_pid(&info, proc_ent->d_name));
             CHECK_FUNC(check_pid_name(&info, substr, &exists));
             if (exists) {
-                temp_pid = info.pid; 
+                temp_pid = info.pid;
                 break;
             }
         }
@@ -144,7 +149,7 @@ cleanup:
     return ret_status;
 }
 
-error_status_t client() {
+error_status_t client_pipe() {
     error_status_t ret_status = STATUS_SUCCESS;
     int fd = -1;
     int pid = 0;
@@ -152,19 +157,39 @@ error_status_t client() {
     char proc_name[NAME_MAX] = {0};
     int name_len = 0;
 
-	/* Create the FIFO if it does not exist */
-	mkfifo(FIFO_FILE, S_IFIFO|0640);
-	fd = open(FIFO_FILE, O_RDWR);
-    CHECK_STR(fd != -1,"Failed to open FIFO file");
+    /* Create the FIFO if it does not exist */
+    mkfifo(FIFO_FILE, S_IFIFO | 0640);
+    fd = open(FIFO_FILE, O_RDWR);
+    CHECK_STR(fd != -1, "Failed to open FIFO file");
     r_bytes = read(fd, proc_name, NAME_MAX);
     CHECK(r_bytes > 0);
-    name_len = strlen(proc_name); 
+    name_len = strlen(proc_name);
     proc_name[name_len - 1] = '\0';
     printf("got proc name: %s\n", proc_name);
     CHECK_FUNC(check_process_name(proc_name, &pid));
     printf("found pid: %d, for proc name: %s\n", pid, proc_name);
 
 cleanup:
+    return ret_status;
+}
+
+error_status_t client() {
+    error_status_t ret_status = STATUS_SUCCESS;
+    int client_fd = -1;
+    int read_bytes = 0;
+    struct sockaddr_un addr = {0};
+    message_t msg = {0};
+
+    client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    CHECK(client_fd != -1);
+    addr.sun_family = AF_UNIX;
+    // TODO: check memcpy return?
+    memcpy(addr.sun_path, UNIX_SOCK_PATH, sizeof(addr.sun_path) - 1);
+
+    CHECK(connect(client_fd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
+
+cleanup:
+    close(client_fd);  // Best effort.
     return ret_status;
 }
 
