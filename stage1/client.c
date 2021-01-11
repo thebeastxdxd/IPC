@@ -73,6 +73,7 @@ error_status_t read_proc_name(int fd, char* proc_name, int max_len) {
     r_bytes = read(fd, proc_name, max_len);
     CHECK(r_bytes > 0);
     name_len = strlen(proc_name);
+    // newline to null
     proc_name[name_len - 1] = '\0';
     printf("got proc name: %s\n", proc_name);
 
